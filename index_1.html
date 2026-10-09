@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What Should I Eat?</title>
+  <style>
+    :root {
+      --bg: #fff8f0;
+      --card: #ffffff;
+      --ink: #2b2118;
+      --muted: #7a6a5c;
+      --accent: #d9480f;
+      --accent-soft: #ffe8d9;
+      --border: #ecdccc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 2rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 28px; }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 16px;
+    }
+    h2 { font-size: 1rem; margin: 0 0 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip input { position: absolute; opacity: 0; pointer-events: none; }
+    .chip span {
+      display: inline-block;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      user-select: none;
+      transition: background .15s, border-color .15s;
+    }
+    .chip span:hover { border-color: var(--accent); }
+    .chip input:checked + span {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .hint { color: var(--muted); font-size: .85rem; margin: 10px 0 0; }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+    button#pick {
+      width: 100%;
+      font-size: 1.1rem;
+      font-weight: 600;
+      padding: 14px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+    button#pick:hover { filter: brightness(1.08); }
+    button#pick:disabled { opacity: .6; cursor: wait; }
+    #result { margin-top: 20px; }
+    .dish {
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      text-align: center;
+      animation: pop .25s ease-out;
+    }
+    .dish h3 { font-size: 1.6rem; margin: 0 0 4px; }
+    .dish .cuisine { color: var(--accent); font-weight: 600; margin-bottom: 8px; }
+    .dish .tags { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+    .tag { background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: .8rem; }
+    .none { text-align: center; color: var(--muted); padding: 16px; }
+    @keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .dish { animation: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>What should I eat?</h1>
+  <p class="sub">Choose your cravings, then let fate pick the dish. Leave a group empty for "anything".</p>
+
+  <section>
+    <h2>Cuisine (country of origin)</h2>
+    <div class="chips">
+      {% for c in cuisines %}
+      <label class="chip"><input type="checkbox" name="cuisine" value="{{ c }}"><span>{{ c }}</span></label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Flavor profile</h2>
+    <div class="chips">
+      {% for f in flavors %}
+      <label class="chip"><input type="checkbox" name="flavor" value="{{ f }}"><span>{{ f|capitalize }}</span></label>
+      {% endfor %}
+    </div>
+    <p class="hint">
+      <label class="toggle"><input type="checkbox" id="match-all"> Dish must match <strong>all</strong> selected flavors</label>
+    </p>
+  </section>
+
+  <button id="pick" type="button">🎲 Pick my meal</button>
+
+  <div id="result" aria-live="polite"></div>
+</main>
+
+<script>
+  const btn = document.getElementById('pick');
+  const result = document.getElementById('result');
+
+  const checked = name =>
+    [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value);
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/pick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cuisines: checked('cuisine'),
+          flavors: checked('flavor'),
+          match_all: document.getElementById('match-all').checked,
+        }),
+      });
+      const data = await res.json();
+      if (!data.found) {
+        result.innerHTML = `<div class="none">${esc(data.message)}</div>`;
+        return;
+      }
+      const d = data.dish;
+      result.innerHTML = `
+        <div class="dish">
+          <h3>${esc(d.name)}</h3>
+          <div class="cuisine">${esc(d.cuisine)}</div>
+          <div>${esc(d.description)}</div>
+          <div class="tags">${d.flavors.map(f => `<span class="tag">${esc(f)}</span>`).join('')}</div>
+        </div>`;
+      btn.textContent = '🎲 Pick again';
+    } catch (e) {
+      result.innerHTML = '<div class="none">Something went wrong. Please try again.</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
